@@ -1,0 +1,936 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Chess.com Style Review & Local Pass 'N Play</title>
+  <style>
+    * { box-sizing: border-box; }
+    body {
+      font-family: system-ui, -apple-system, sans-serif;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      background: #1e1e1e;
+      color: #eee;
+      margin: 0;
+      padding: 0.5rem;
+    }
+    .container {
+      max-width: 600px;
+      width: 100%;
+    }
+    .controls, .toggles {
+      display: flex;
+      gap: 8px;
+      margin-bottom: 0.5rem;
+      align-items: center;
+      justify-content: space-between;
+      flex-wrap: wrap;
+    }
+    select, button, label {
+      padding: 6px 10px;
+      font-size: 0.85rem;
+      border-radius: 4px;
+      border: 1px solid #444;
+      background: #2b2b2b;
+      color: #fff;
+    }
+    button { cursor: pointer; background: #3b82f6; border: none; }
+    button:disabled { background: #555; opacity: 0.6; cursor: not-allowed; }
+    .btn-secondary { background: #6b7280; }
+
+    .game-area {
+      display: flex;
+      gap: 8px;
+      width: 100%;
+      position: relative;
+    }
+    
+    .eval-container {
+      width: 24px;
+      background: #333;
+      border-radius: 4px;
+      overflow: hidden;
+      display: flex;
+      flex-direction: column;
+      justify-content: flex-end;
+      border: 1px solid #555;
+      position: relative;
+    }
+    .eval-white {
+      background: #ffffff;
+      width: 100%;
+      height: 50%;
+      transition: height 0.3s ease;
+    }
+    .eval-text {
+      position: absolute;
+      width: 100%;
+      text-align: center;
+      font-size: 0.65rem;
+      font-weight: bold;
+      color: #000;
+      bottom: 2px;
+      z-index: 2;
+    }
+
+    .board-wrapper {
+      position: relative;
+      flex: 1;
+      aspect-ratio: 1 / 1;
+      transition: transform 0.5s ease-in-out;
+    }
+
+    /* Flip board animation for local multiplayer */
+    .flipped {
+      transform: rotate(180deg);
+    }
+    .flipped .square {
+      transform: rotate(180deg);
+    }
+
+    #board {
+      display: grid;
+      grid-template-columns: repeat(8, 1fr);
+      grid-template-rows: repeat(8, 1fr);
+      width: 100%;
+      height: 100%;
+      border: 2px solid #555;
+      user-select: none;
+      touch-action: manipulation;
+    }
+
+    #arrow-canvas {
+      position: absolute;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      pointer-events: none;
+      z-index: 10;
+    }
+
+    .square {
+      position: relative;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      font-size: clamp(1.2rem, 8vw, 2.5rem);
+      line-height: 1;
+      min-width: 0; min-height: 0;
+      overflow: hidden;
+      cursor: pointer;
+      transition: transform 0.5s ease-in-out;
+    }
+    .white-sq { background-color: #f0d9b5; color: #000; }
+    .black-sq { background-color: #b58863; color: #000; }
+    .selected { background-color: #7b964d !important; }
+    
+    .possible-move::after {
+      content: '';
+      width: 25%;
+      height: 25%;
+      background: rgba(0,0,0,0.35);
+      border-radius: 50%;
+      position: absolute;
+      top: 37.5%;
+      left: 37.5%;
+      pointer-events: none;
+    }
+
+    /* Rating Overlay Icon */
+    .move-rating-icon {
+      position: absolute;
+      top: 2px;
+      right: 2px;
+      width: 18px;
+      height: 18px;
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 0.6rem;
+      font-weight: bold;
+      color: #fff;
+      z-index: 12;
+      box-shadow: 0 1px 3px rgba(0,0,0,0.5);
+    }
+    .icon-brilliant { background: #155e75; }
+    .icon-great { background: #0284c7; }
+    .icon-best { background: #10b981; }
+    .icon-excellent { background: #22c55e; }
+    .icon-good { background: #3b82f6; }
+    .icon-book { background: #d97706; }
+    .icon-inaccuracy { background: #f59e0b; }
+    .icon-mistake { background: #f97316; }
+    .icon-miss { background: #a855f7; }
+    .icon-blunder { background: #ef4444; }
+    
+    #status {
+      margin-top: 0.5rem;
+      font-weight: bold;
+      text-align: center;
+    }
+
+    #review-mode-banner {
+      display: none;
+      background: #f59e0b;
+      color: #000;
+      font-weight: bold;
+      text-align: center;
+      padding: 4px;
+      margin-top: 4px;
+      border-radius: 4px;
+      font-size: 0.8rem;
+    }
+
+    #analysis-panel {
+      margin-top: 0.75rem;
+      background: #2b2b2b;
+      padding: 0.75rem;
+      border-radius: 6px;
+      display: none;
+    }
+
+    .summary-card {
+      background: #1e1e1e;
+      padding: 8px 12px;
+      border-radius: 6px;
+      margin-bottom: 8px;
+    }
+    .summary-stats {
+      display: flex;
+      justify-content: flex-start;
+      flex-wrap: wrap;
+      gap: 4px;
+      margin-top: 6px;
+      font-size: 0.75rem;
+    }
+
+    #analysis-list {
+      max-height: 220px;
+      overflow-y: auto;
+    }
+
+    .analysis-row {
+      display: flex;
+      flex-direction: column;
+      padding: 6px;
+      border-bottom: 1px solid #333;
+      cursor: pointer;
+      border-radius: 4px;
+      transition: background 0.15s;
+    }
+    .analysis-row:hover { background: #383838; }
+    .analysis-row.active-review {
+      background: #1e3a8a !important;
+      border-left: 4px solid #3b82f6;
+    }
+
+    .analysis-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+    .analysis-comment {
+      font-size: 0.78rem;
+      color: #aaa;
+      font-style: italic;
+      margin-top: 2px;
+    }
+
+    .badge {
+      padding: 2px 6px;
+      border-radius: 3px;
+      font-weight: bold;
+      font-size: 0.72rem;
+    }
+    .badge-brilliant { background: #155e75; color: #fff; }
+    .badge-great { background: #0284c7; color: #fff; }
+    .badge-best { background: #10b981; color: #fff; }
+    .badge-excellent { background: #22c55e; color: #fff; }
+    .badge-good { background: #3b82f6; color: #fff; }
+    .badge-book { background: #d97706; color: #fff; }
+    .badge-inaccuracy { background: #f59e0b; color: #fff; }
+    .badge-mistake { background: #f97316; color: #fff; }
+    .badge-miss { background: #a855f7; color: #fff; }
+    .badge-blunder { background: #ef4444; color: #fff; }
+  </style>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/chess.js/0.10.3/chess.min.js"></script>
+</head>
+<body>
+
+  <div class="container">
+    <div class="controls">
+      <div>
+        <label for="game-mode">Mode:</label>
+        <select id="game-mode">
+          <option value="ai" selected>Player vs Stockfish</option>
+          <option value="local">Local 2-Player (Auto-Flip)</option>
+        </select>
+      </div>
+
+      <div id="ai-difficulty-wrapper">
+        <label for="difficulty">Difficulty:</label>
+        <select id="difficulty">
+          <option value="0">Beginner</option>
+          <option value="5">Casual</option>
+          <option value="10">Intermediate</option>
+          <option value="15">Advanced</option>
+          <option value="20" selected>Master</option>
+        </select>
+      </div>
+
+      <button id="reset-btn">New Game</button>
+    </div>
+
+    <div class="toggles">
+      <label><input type="checkbox" id="toggle-eval" checked> Live Evaluation Bar</label>
+      <button id="analyze-btn">Analyze Game</button>
+      <button id="current-pos-btn" class="btn-secondary" disabled>Current Position</button>
+    </div>
+
+    <div id="review-mode-banner">Review Mode Active (Read Only)</div>
+
+    <div class="game-area">
+      <div class="eval-container" id="eval-container">
+        <div class="eval-white" id="eval-white"></div>
+        <div class="eval-text" id="eval-text">0.0</div>
+      </div>
+      
+      <div class="board-wrapper" id="board-wrapper">
+        <div id="board"></div>
+        <canvas id="arrow-canvas"></canvas>
+      </div>
+    </div>
+
+    <div id="status">Loading Stockfish...</div>
+
+    <div id="analysis-panel">
+      <div class="summary-card">
+        <div><strong>Overall Accuracy:</strong> <span id="accuracy-score">0%</span></div>
+        <div class="summary-stats" id="summary-stats"></div>
+      </div>
+      <strong>Step-by-Step Review (Click move to jump):</strong>
+      <div id="analysis-list"></div>
+    </div>
+  </div>
+
+  <script>
+    const PIECE_NAMES = { 'p': 'pawn', 'r': 'rook', 'n': 'knight', 'b': 'bishop', 'q': 'queen', 'k': 'king' };
+    const PIECE_VALUES = { 'p': 1, 'n': 3, 'b': 3, 'r': 5, 'q': 9, 'k': 0 };
+    const PIECE_SYMBOLS = {
+      'p': '♟', 'r': '♜', 'n': '♞', 'b': '♝', 'q': '♛', 'k': '♚',
+      'P': '♙', 'R': '♖', 'N': '♘', 'B': '♗', 'Q': '♕', 'K': '♔'
+    };
+
+    const RATING_SYMBOLS = {
+      'Brilliant': '!!',
+      'Great': '!',
+      'Best': '★',
+      'Excellent': '✓+',
+      'Good': '✓',
+      'Book': '📖',
+      'Inaccuracy': '?!',
+      'Mistake': '?',
+      'Miss': '❌',
+      'Blunder': '??'
+    };
+
+    const game = new Chess();
+    let selectedSquare = null;
+    let possibleMoves = [];
+    let engineWorker = null;
+    let isThinking = false;
+    let engineReady = false;
+    let isAnalyzing = false;
+    
+    let isReviewing = false;
+    let reviewMoveIndex = -1;
+    let analysisData = [];
+
+    function renderBoard(fenOverride = null, activeReviewItem = null) {
+      const boardEl = document.getElementById('board');
+      const boardWrapper = document.getElementById('board-wrapper');
+      boardEl.innerHTML = '';
+
+      const tempGame = fenOverride ? new Chess(fenOverride) : game;
+      const boardState = tempGame.board();
+
+      // Handle Board Auto-rotation in Local 2-Player mode
+      const isLocalMode = document.getElementById('game-mode').value === 'local';
+      if (isLocalMode && !isReviewing) {
+        if (tempGame.turn() === 'b') {
+          boardWrapper.classList.add('flipped');
+        } else {
+          boardWrapper.classList.remove('flipped');
+        }
+      } else if (!isReviewing) {
+        boardWrapper.classList.remove('flipped');
+      }
+
+      for (let r = 0; r < 8; r++) {
+        for (let c = 0; c < 8; c++) {
+          const sqName = String.fromCharCode(97 + c) + (8 - r);
+          const sq = document.createElement('div');
+          sq.className = `square ${(r + c) % 2 === 0 ? 'white-sq' : 'black-sq'}`;
+          
+          const piece = boardState[r][c];
+          if (piece) {
+            const pieceChar = piece.color === 'w' ? piece.type.toUpperCase() : piece.type.toLowerCase();
+            sq.textContent = PIECE_SYMBOLS[pieceChar];
+          }
+
+          if (!isReviewing && selectedSquare === sqName) sq.classList.add('selected');
+          if (!isReviewing && possibleMoves.includes(sqName)) sq.classList.add('possible-move');
+
+          if (isReviewing && activeReviewItem && activeReviewItem.move.to === sqName) {
+            const badge = document.createElement('div');
+            const classKey = activeReviewItem.classification.label.toLowerCase();
+            badge.className = `move-rating-icon icon-${classKey}`;
+            badge.textContent = RATING_SYMBOLS[activeReviewItem.classification.label];
+            sq.appendChild(badge);
+          }
+
+          sq.addEventListener('click', () => handleSquareClick(sqName));
+          boardEl.appendChild(sq);
+        }
+      }
+
+      updateStatus();
+    }
+
+    function handleSquareClick(square) {
+      if (isReviewing || isThinking || isAnalyzing || game.game_over() || !engineReady) return;
+
+      const isLocalMode = document.getElementById('game-mode').value === 'local';
+
+      if (selectedSquare) {
+        const move = game.move({
+          from: selectedSquare,
+          to: square,
+          promotion: 'q'
+        });
+
+        selectedSquare = null;
+        possibleMoves = [];
+
+        if (move) {
+          clearCanvas();
+          renderBoard();
+          if (!game.game_over() && !isLocalMode) {
+            triggerEngineMove();
+          }
+          return;
+        }
+      }
+
+      const piece = game.get(square);
+      if (piece && piece.color === game.turn()) {
+        selectedSquare = square;
+        possibleMoves = game.moves({ square: square, verbose: true }).map(m => m.to);
+      } else {
+        selectedSquare = null;
+        possibleMoves = [];
+      }
+
+      renderBoard();
+    }
+
+    function updateStatus() {
+      const statusEl = document.getElementById('status');
+      const banner = document.getElementById('review-mode-banner');
+      const isLocalMode = document.getElementById('game-mode').value === 'local';
+
+      if (isReviewing) {
+        banner.style.display = 'block';
+        statusEl.textContent = "Reviewing position history...";
+        return;
+      }
+
+      banner.style.display = 'none';
+      if (!engineReady) return;
+
+      if (isAnalyzing) {
+        statusEl.textContent = "Analyzing game moves...";
+        return;
+      }
+
+      if (game.in_checkmate()) {
+        statusEl.textContent = "Checkmate! Game Over.";
+      } else if (game.in_draw()) {
+        statusEl.textContent = "Draw!";
+      } else if (isThinking) {
+        statusEl.textContent = "Stockfish is thinking...";
+      } else {
+        if (isLocalMode) {
+          statusEl.textContent = game.turn() === 'w' ? "Local Turn: White" : "Local Turn: Black";
+        } else {
+          statusEl.textContent = game.turn() === 'w' ? "Your turn (White)" : "Stockfish's turn (Black)";
+        }
+      }
+    }
+
+    function updateEvalBar(scoreCp, isMate = false, mateIn = 0) {
+      const evalWhite = document.getElementById('eval-white');
+      const evalText = document.getElementById('eval-text');
+      
+      let evalDisplay = "";
+      let percentage = 50;
+
+      if (isMate) {
+        evalDisplay = `M${Math.abs(mateIn)}`;
+        percentage = mateIn > 0 ? 100 : 0;
+      } else {
+        const evalVal = (scoreCp / 100).toFixed(1);
+        evalDisplay = scoreCp > 0 ? `+${evalVal}` : evalVal;
+        
+        const clampedCp = Math.max(-1000, Math.min(1000, scoreCp));
+        percentage = 50 + (clampedCp / 20);
+      }
+
+      evalWhite.style.height = `${percentage}%`;
+      evalText.textContent = evalDisplay;
+    }
+
+    async function initEngine() {
+      const statusEl = document.getElementById('status');
+      const engineUrl = 'https://cdnjs.cloudflare.com/ajax/libs/stockfish.js/10.0.2/stockfish.js';
+
+      try {
+        const response = await fetch(engineUrl);
+        if (!response.ok) throw new Error("Engine download failed.");
+        
+        const scriptText = await response.text();
+        const blob = new Blob([scriptText], { type: 'application/javascript' });
+        
+        engineWorker = new Worker(URL.createObjectURL(blob));
+
+        engineWorker.onmessage = function (e) {
+          const line = typeof e.data === 'string' ? e.data : '';
+
+          if (line === 'uciok' || line === 'readyok') {
+            engineReady = true;
+            updateStatus();
+          }
+
+          if (line.includes('score cp') || line.includes('score mate')) {
+            parseEvalLine(line);
+          }
+
+          if (line.startsWith('bestmove') && !isAnalyzing && !isReviewing) {
+            const isLocalMode = document.getElementById('game-mode').value === 'local';
+            if (!isLocalMode) {
+              const moveStr = line.split(' ')[1];
+              if (moveStr && moveStr !== '(none)') {
+                game.move({
+                  from: moveStr.substring(0, 2),
+                  to: moveStr.substring(2, 4),
+                  promotion: moveStr[4] || 'q'
+                });
+              }
+              isThinking = false;
+              renderBoard();
+            }
+          }
+        };
+
+        engineWorker.postMessage('uci');
+        engineWorker.postMessage('isready');
+        setDifficulty();
+      } catch (err) {
+        statusEl.textContent = "Error loading Stockfish.";
+      }
+    }
+
+    function parseEvalLine(line) {
+      if (!document.getElementById('toggle-eval').checked || isAnalyzing || isReviewing) return;
+
+      const tokens = line.split(' ');
+      const cpIndex = tokens.indexOf('cp');
+      const mateIndex = tokens.indexOf('mate');
+
+      if (cpIndex !== -1) {
+        let cp = parseInt(tokens[cpIndex + 1]);
+        if (game.turn() === 'b') cp = -cp;
+        updateEvalBar(cp);
+      } else if (mateIndex !== -1) {
+        let mate = parseInt(tokens[mateIndex + 1]);
+        if (game.turn() === 'b') mate = -mate;
+        updateEvalBar(0, true, mate);
+      }
+    }
+
+    function setDifficulty() {
+      if (!engineWorker) return;
+      const level = document.getElementById('difficulty').value;
+      engineWorker.postMessage(`setoption name Skill Level value ${level}`);
+    }
+
+    function triggerEngineMove() {
+      if (!engineWorker || game.game_over() || isAnalyzing || isReviewing) return;
+      isThinking = true;
+      updateStatus();
+
+      engineWorker.postMessage(`position fen ${game.fen()}`);
+      engineWorker.postMessage('go depth 12');
+    }
+
+    // Chess.com Classification Rule Classifier
+    function classifyChessDotComMove(move, evalLoss, moveIndex, preEval, postEval, isBestMoveMatch, opponentPreviousEvalLoss) {
+      // 1. Book Move (First 5 moves of game)
+      if (moveIndex < 6) {
+        return { label: 'Book', class: 'badge-book', scoreWeight: 100, comment: 'Standard opening book move.' };
+      }
+
+      // 2. Brilliant Move (Sacrifice best move)
+      const pieceVal = PIECE_VALUES[move.piece] || 1;
+      const capturedVal = move.captured ? (PIECE_VALUES[move.captured] || 1) : 0;
+      const isSacrifice = (pieceVal - capturedVal) > 1; // Sacrificing material
+
+      if (isSacrifice && evalLoss <= 15 && postEval >= -50) {
+        return { label: 'Brilliant', class: 'badge-brilliant', scoreWeight: 100, comment: 'Brilliant sacrifice! Tough move to find.' };
+      }
+
+      // 3. Great Move
+      if (isBestMoveMatch && evalLoss <= 10 && Math.abs(preEval) < 100 && postEval > 180) {
+        return { label: 'Great', class: 'badge-great', scoreWeight: 100, comment: 'Great move! Pivotal swing in the game.' };
+      }
+
+      // 4. Best Move
+      if (isBestMoveMatch || evalLoss <= 10) {
+        return { label: 'Best', class: 'badge-best', scoreWeight: 100, comment: 'Engine\'s top choice.' };
+      }
+
+      // 5. Excellent
+      if (evalLoss <= 25) {
+        return { label: 'Excellent', class: 'badge-excellent', scoreWeight: 90, comment: 'Almost as good as the best move.' };
+      }
+
+      // 6. Good
+      if (evalLoss <= 50) {
+        return { label: 'Good', class: 'badge-good', scoreWeight: 75, comment: 'A decent move, maintaining game control.' };
+      }
+
+      // 7. Inaccuracy
+      if (evalLoss <= 90) {
+        return { label: 'Inaccuracy', class: 'badge-inaccuracy', scoreWeight: 50, comment: 'Inaccuracy. A weaker option was played.' };
+      }
+
+      // 8. Mistake
+      if (evalLoss <= 200) {
+        return { label: 'Mistake', class: 'badge-mistake', scoreWeight: 20, comment: 'Mistake! Immediately worsened your position.' };
+      }
+
+      // 9. Miss (Opponent blundered prior, but player failed to punish)
+      if (opponentPreviousEvalLoss > 150 && evalLoss > 150) {
+        return { label: 'Miss', class: 'badge-miss', scoreWeight: 10, comment: 'Missed opportunity to punish opponent\'s blunder!' };
+      }
+
+      // 10. Blunder
+      return { label: 'Blunder', class: 'badge-blunder', scoreWeight: 0, comment: 'Blunder! A severe mistake losing material or game control.' };
+    }
+
+    // Dual Arrow Drawing Helper
+    function drawReviewArrows(playedMove, bestMoveFrom, bestMoveTo, isBestMove) {
+      const canvas = document.getElementById('arrow-canvas');
+      const ctx = canvas.getContext('2d');
+      const boardWrapper = document.getElementById('board-wrapper');
+      const isFlipped = boardWrapper.classList.contains('flipped');
+      
+      const width = boardWrapper.clientWidth;
+      const height = boardWrapper.clientHeight;
+      canvas.width = width;
+      canvas.height = height;
+
+      ctx.clearRect(0, 0, width, height);
+
+      const sqSize = width / 8;
+      
+      const getCoord = (sq) => {
+        let col = sq.charCodeAt(0) - 97;
+        let row = 8 - parseInt(sq[1]);
+
+        if (isFlipped) {
+          col = 7 - col;
+          row = 7 - row;
+        }
+
+        return {
+          x: col * sqSize + sqSize / 2,
+          y: row * sqSize + sqSize / 2
+        };
+      };
+
+      const drawArrow = (fromSq, toSq, colorStr) => {
+        if (!fromSq || !toSq) return;
+        const start = getCoord(fromSq);
+        const end = getCoord(toSq);
+
+        const headLen = sqSize * 0.32;
+        const angle = Math.atan2(end.y - start.y, end.x - start.x);
+
+        ctx.strokeStyle = colorStr;
+        ctx.fillStyle = colorStr;
+        ctx.lineWidth = sqSize * 0.1;
+
+        ctx.beginPath();
+        ctx.moveTo(start.x, start.y);
+        ctx.lineTo(end.x, end.y);
+        ctx.stroke();
+
+        ctx.beginPath();
+        ctx.moveTo(end.x, end.y);
+        ctx.lineTo(end.x - headLen * Math.cos(angle - Math.PI / 6), end.y - headLen * Math.sin(angle - Math.PI / 6));
+        ctx.lineTo(end.x - headLen * Math.cos(angle + Math.PI / 6), end.y - headLen * Math.sin(angle + Math.PI / 6));
+        ctx.closePath();
+        ctx.fill();
+      };
+
+      if (!isBestMove) {
+        drawArrow(playedMove.from, playedMove.to, 'rgba(239, 68, 68, 0.85)');
+        drawArrow(bestMoveFrom, bestMoveTo, 'rgba(16, 185, 129, 0.85)');
+      } else {
+        drawArrow(playedMove.from, playedMove.to, 'rgba(16, 185, 129, 0.85)');
+      }
+    }
+
+    function clearCanvas() {
+      const canvas = document.getElementById('arrow-canvas');
+      const ctx = canvas.getContext('2d');
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+    }
+
+    async function runAnalysis() {
+      const history = game.history({ verbose: true });
+      if (history.length === 0) {
+        alert("Play a few moves first before running analysis!");
+        return;
+      }
+
+      isAnalyzing = true;
+      const btn = document.getElementById('analyze-btn');
+      const panel = document.getElementById('analysis-panel');
+      const list = document.getElementById('analysis-list');
+      
+      btn.disabled = true;
+      btn.textContent = "Analyzing...";
+      panel.style.display = 'block';
+      list.innerHTML = '';
+      updateStatus();
+
+      const simGame = new Chess();
+      analysisData = [];
+
+      let totalPoints = 0;
+      const counts = {
+        Brilliant: 0, Great: 0, Best: 0, Excellent: 0, Good: 0,
+        Book: 0, Inaccuracy: 0, Mistake: 0, Miss: 0, Blunder: 0
+      };
+
+      let prevOpponentEvalLoss = 0;
+
+      for (let i = 0; i < history.length; i++) {
+        const move = history[i];
+        
+        const { bestMoveLan, score: preEvalWhite } = await evaluatePositionAndBestMove(simGame.fen(), simGame.turn());
+        simGame.move(move);
+
+        const postEvalWhite = await evaluatePositionWhitePerspective(simGame.fen());
+
+        let evalLoss = (move.color === 'w') ? (preEvalWhite - postEvalWhite) : (postEvalWhite - preEvalWhite);
+        evalLoss = Math.max(0, Math.round(evalLoss));
+
+        const playerMoveLan = move.from + move.to;
+        const isBestMatch = bestMoveLan && bestMoveLan.startsWith(playerMoveLan);
+
+        const classification = classifyChessDotComMove(
+          move, evalLoss, i, preEvalWhite, postEvalWhite, isBestMatch, prevOpponentEvalLoss
+        );
+
+        counts[classification.label]++;
+        totalPoints += classification.scoreWeight;
+        prevOpponentEvalLoss = evalLoss;
+
+        const moveData = {
+          index: i,
+          move: move,
+          fenAfter: simGame.fen(),
+          evalLoss: evalLoss,
+          classification: classification,
+          comment: classification.comment,
+          bestMoveFrom: bestMoveLan ? bestMoveLan.substring(0, 2) : null,
+          bestMoveTo: bestMoveLan ? bestMoveLan.substring(2, 4) : null
+        };
+
+        analysisData.push(moveData);
+
+        const row = document.createElement('div');
+        row.className = 'analysis-row';
+        row.id = `analysis-row-${i}`;
+        row.innerHTML = `
+          <div class="analysis-header">
+            <span><strong>${Math.floor(i / 2) + 1}.${move.color === 'w' ? '' : '...'} ${move.san}</strong> (Δ ${evalLoss}cp)</span>
+            <span class="badge badge-${classification.label.toLowerCase()}">${classification.label}</span>
+          </div>
+          <div class="analysis-comment">${classification.comment}</div>
+        `;
+
+        row.addEventListener('click', () => jumpToMoveReview(i));
+        list.appendChild(row);
+      }
+
+      const accuracy = Math.round(totalPoints / history.length);
+      document.getElementById('accuracy-score').textContent = `${accuracy}%`;
+
+      const statsEl = document.getElementById('summary-stats');
+      statsEl.innerHTML = Object.keys(counts)
+        .filter(key => counts[key] > 0)
+        .map(key => `<span class="badge badge-${key.toLowerCase()}">${key}: ${counts[key]}</span>`)
+        .join(' ');
+
+      isAnalyzing = false;
+      btn.disabled = false;
+      btn.textContent = "Re-analyze Game";
+      renderBoard();
+    }
+
+    function jumpToMoveReview(index) {
+      if (index < 0 || index >= analysisData.length) return;
+
+      isReviewing = true;
+      reviewMoveIndex = index;
+      document.getElementById('current-pos-btn').disabled = false;
+
+      const item = analysisData[index];
+      
+      document.querySelectorAll('.analysis-row').forEach(r => r.classList.remove('active-review'));
+      document.getElementById(`analysis-row-${index}`).classList.add('active-review');
+
+      renderBoard(item.fenAfter, item);
+
+      const isBest = item.classification.label === 'Best' || item.classification.label === 'Brilliant' || item.classification.label === 'Book';
+      drawReviewArrows(item.move, item.bestMoveFrom, item.bestMoveTo, isBest);
+    }
+
+    function returnToCurrentPosition() {
+      isReviewing = false;
+      reviewMoveIndex = -1;
+      document.getElementById('current-pos-btn').disabled = true;
+      document.querySelectorAll('.analysis-row').forEach(r => r.classList.remove('active-review'));
+      
+      clearCanvas();
+      renderBoard();
+    }
+
+    function evaluatePositionWhitePerspective(fen) {
+      return new Promise((resolve) => {
+        let score = 0;
+        const tempGame = new Chess(fen);
+        const turn = tempGame.turn();
+
+        const handler = (e) => {
+          const line = typeof e.data === 'string' ? e.data : '';
+          
+          if (line.includes('score cp')) {
+            const tokens = line.split(' ');
+            const cpIndex = tokens.indexOf('cp');
+            if (cpIndex !== -1) {
+              score = parseInt(tokens[cpIndex + 1]);
+              if (turn === 'b') score = -score;
+            }
+          }
+
+          if (line.startsWith('bestmove')) {
+            engineWorker.removeEventListener('message', handler);
+            resolve(score);
+          }
+        };
+
+        engineWorker.addEventListener('message', handler);
+        engineWorker.postMessage(`position fen ${fen}`);
+        engineWorker.postMessage('go depth 8');
+      });
+    }
+
+    function evaluatePositionAndBestMove(fen, sideToMove) {
+      return new Promise((resolve) => {
+        let score = 0;
+        let bestMoveLan = '';
+
+        const handler = (e) => {
+          const line = typeof e.data === 'string' ? e.data : '';
+          
+          if (line.includes('score cp')) {
+            const tokens = line.split(' ');
+            const cpIndex = tokens.indexOf('cp');
+            if (cpIndex !== -1) {
+              score = parseInt(tokens[cpIndex + 1]);
+              if (sideToMove === 'b') score = -score;
+            }
+          }
+
+          if (line.startsWith('bestmove')) {
+            bestMoveLan = line.split(' ')[1];
+            engineWorker.removeEventListener('message', handler);
+            resolve({ bestMoveLan, score });
+          }
+        };
+
+        engineWorker.addEventListener('message', handler);
+        engineWorker.postMessage(`position fen ${fen}`);
+        engineWorker.postMessage('go depth 8');
+      });
+    }
+
+    document.getElementById('game-mode').addEventListener('change', (e) => {
+      const isLocal = e.target.value === 'local';
+      document.getElementById('ai-difficulty-wrapper').style.display = isLocal ? 'none' : 'block';
+      renderBoard();
+    });
+
+    document.getElementById('toggle-eval').addEventListener('change', (e) => {
+      document.getElementById('eval-container').style.display = e.target.checked ? 'flex' : 'none';
+    });
+    document.getElementById('difficulty').addEventListener('change', setDifficulty);
+    document.getElementById('analyze-btn').addEventListener('click', runAnalysis);
+    document.getElementById('current-pos-btn').addEventListener('click', returnToCurrentPosition);
+    document.getElementById('reset-btn').addEventListener('click', () => {
+      game.reset();
+      selectedSquare = null;
+      possibleMoves = [];
+      isThinking = false;
+      isAnalyzing = false;
+      isReviewing = false;
+      analysisData = [];
+      clearCanvas();
+      document.getElementById('analysis-panel').style.display = 'none';
+      document.getElementById('current-pos-btn').disabled = true;
+      updateEvalBar(0);
+      renderBoard();
+    });
+
+    renderBoard();
+    initEngine();
+  </script>
+</body>
+</html>
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <title>My Game</title>
+  <link rel="manifest" href="manifest.json">
+</head>
+<body>
+
+  <script>
+    if ('serviceWorker' in navigator) {
+      window.addEventListener('load', () => {
+        navigator.serviceWorker.register('./sw.js');
+      });
+    }
+  </script>
+</body>
+</html>
