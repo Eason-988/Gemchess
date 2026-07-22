@@ -4,6 +4,9 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Chess.com Style Review & Local Pass 'N Play</title>
+  
+  <link rel="manifest" href="manifest.json">
+
   <style>
     * { box-sizing: border-box; }
     body {
@@ -119,7 +122,7 @@
       transition: transform 0.4s ease-in-out;
     }
 
-    /* Piece orientation for Local Mode */
+    /* Local Mode 180° piece rotation */
     .rotate-180 {
       transform: rotate(180deg);
     }
@@ -318,6 +321,15 @@
   </div>
 
   <script>
+    if ('serviceWorker' in navigator) {
+      window.addEventListener('load', () => {
+        navigator.serviceWorker.register('./sw.js')
+          .catch(err => console.error('ServiceWorker registration failed: ', err));
+      });
+    }
+  </script>
+
+  <script>
     const PIECE_VALUES = { 'p': 1, 'n': 3, 'b': 3, 'r': 5, 'q': 9, 'k': 0 };
     const PIECE_SYMBOLS = {
       'p': '♟', 'r': '♜', 'n': '♞', 'b': '♝', 'q': '♛', 'k': '♚',
@@ -330,7 +342,6 @@
       'Miss': '❌', 'Blunder': '??'
     };
 
-    // Standard Chess Openings (San sequence matches)
     const KNOWN_BOOK_MOVES = [
       "e4", "d4", "c4", "Nf3", "g3", "b3", "f4", "Nc3",
       "e4 e5", "e4 c5", "e4 e6", "e4 c6", "e4 d6", "e4 g6", "e4 d5", "e4 Nf6",
@@ -585,12 +596,10 @@
     }
 
     function classifyChessDotComMove(move, evalLoss, moveIndex, preEval, postEval, isBestMoveMatch, opponentPreviousEvalLoss, currentSanSequence) {
-      // 1. Precise Book Move Classifier
       if (KNOWN_BOOK_MOVES.includes(currentSanSequence) && moveIndex < 10) {
         return { label: 'Book', class: 'badge-book', scoreWeight: 100, comment: 'Standard opening book move.' };
       }
 
-      // 2. Brilliant Move (Material Sacrifice leading to zero evaluation loss)
       const pieceVal = PIECE_VALUES[move.piece] || 1;
       const capturedVal = move.captured ? (PIECE_VALUES[move.captured] || 1) : 0;
       const isMaterialSacrifice = (pieceVal - capturedVal) >= 2;
@@ -599,42 +608,34 @@
         return { label: 'Brilliant', class: 'badge-brilliant', scoreWeight: 100, comment: 'Brilliant sacrifice! Excellent tactical choice.' };
       }
 
-      // 3. Great Move (Crucial swing move)
       if (isBestMoveMatch && evalLoss <= 10 && preEval < -50 && postEval > 50) {
         return { label: 'Great', class: 'badge-great', scoreWeight: 100, comment: 'Great move! Pivotal turn of position.' };
       }
 
-      // 4. Best Move
       if (isBestMoveMatch || evalLoss <= 12) {
         return { label: 'Best', class: 'badge-best', scoreWeight: 100, comment: 'Engine\'s top recommended move.' };
       }
 
-      // 5. Excellent
       if (evalLoss <= 30) {
         return { label: 'Excellent', class: 'badge-excellent', scoreWeight: 90, comment: 'Nearly as strong as the top move.' };
       }
 
-      // 6. Good
       if (evalLoss <= 65) {
         return { label: 'Good', class: 'badge-good', scoreWeight: 75, comment: 'A solid move, maintaining position balance.' };
       }
 
-      // 7. Inaccuracy
       if (evalLoss <= 120) {
         return { label: 'Inaccuracy', class: 'badge-inaccuracy', scoreWeight: 50, comment: 'Inaccuracy. Gave away part of your advantage.' };
       }
 
-      // 8. Mistake
       if (evalLoss <= 220) {
         return { label: 'Mistake', class: 'badge-mistake', scoreWeight: 20, comment: 'Mistake! Weakened your position.' };
       }
 
-      // 9. Miss
       if (opponentPreviousEvalLoss > 150 && evalLoss > 150) {
         return { label: 'Miss', class: 'badge-miss', scoreWeight: 10, comment: 'Missed opportunity to capitalize on opponent\'s mistake!' };
       }
 
-      // 10. Blunder
       return { label: 'Blunder', class: 'badge-blunder', scoreWeight: 0, comment: 'Blunder! A major oversight that loses material or position.' };
     }
 
