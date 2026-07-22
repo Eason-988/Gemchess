@@ -79,15 +79,6 @@
       position: relative;
       flex: 1;
       aspect-ratio: 1 / 1;
-      transition: transform 0.5s ease-in-out;
-    }
-
-    /* Flip board animation for local multiplayer */
-    .flipped {
-      transform: rotate(180deg);
-    }
-    .flipped .square {
-      transform: rotate(180deg);
     }
 
     #board {
@@ -121,8 +112,18 @@
       min-width: 0; min-height: 0;
       overflow: hidden;
       cursor: pointer;
-      transition: transform 0.5s ease-in-out;
     }
+    
+    .piece {
+      display: inline-block;
+      transition: transform 0.4s ease-in-out;
+    }
+
+    /* Piece orientation for Local Mode */
+    .rotate-180 {
+      transform: rotate(180deg);
+    }
+
     .white-sq { background-color: #f0d9b5; color: #000; }
     .black-sq { background-color: #b58863; color: #000; }
     .selected { background-color: #7b964d !important; }
@@ -139,7 +140,6 @@
       pointer-events: none;
     }
 
-    /* Rating Overlay Icon */
     .move-rating-icon {
       position: absolute;
       top: 2px;
@@ -267,7 +267,7 @@
         <label for="game-mode">Mode:</label>
         <select id="game-mode">
           <option value="ai" selected>Player vs Stockfish</option>
-          <option value="local">Local 2-Player (Auto-Flip)</option>
+          <option value="local">Local 2-Player (Rotate Pieces)</option>
         </select>
       </div>
 
@@ -318,7 +318,6 @@
   </div>
 
   <script>
-    const PIECE_NAMES = { 'p': 'pawn', 'r': 'rook', 'n': 'knight', 'b': 'bishop', 'q': 'queen', 'k': 'king' };
     const PIECE_VALUES = { 'p': 1, 'n': 3, 'b': 3, 'r': 5, 'q': 9, 'k': 0 };
     const PIECE_SYMBOLS = {
       'p': '♟', 'r': '♜', 'n': '♞', 'b': '♝', 'q': '♛', 'k': '♚',
@@ -326,17 +325,22 @@
     };
 
     const RATING_SYMBOLS = {
-      'Brilliant': '!!',
-      'Great': '!',
-      'Best': '★',
-      'Excellent': '✓+',
-      'Good': '✓',
-      'Book': '📖',
-      'Inaccuracy': '?!',
-      'Mistake': '?',
-      'Miss': '❌',
-      'Blunder': '??'
+      'Brilliant': '!!', 'Great': '!', 'Best': '★', 'Excellent': '✓+',
+      'Good': '✓', 'Book': '📖', 'Inaccuracy': '?!', 'Mistake': '?',
+      'Miss': '❌', 'Blunder': '??'
     };
+
+    // Standard Chess Openings (San sequence matches)
+    const KNOWN_BOOK_MOVES = [
+      "e4", "d4", "c4", "Nf3", "g3", "b3", "f4", "Nc3",
+      "e4 e5", "e4 c5", "e4 e6", "e4 c6", "e4 d6", "e4 g6", "e4 d5", "e4 Nf6",
+      "d4 d5", "d4 Nf6", "d4 f5", "d4 e6", "d4 g6", "d4 c5",
+      "e4 e5 Nf3", "e4 e5 Nf3 Nc6", "e4 e5 Nf3 Nc6 Bc4", "e4 e5 Nf3 Nc6 Bb5",
+      "e4 c5 Nf3", "e4 c5 Nc3", "d4 Nf6 c4", "d4 Nf6 c4 e6", "d4 Nf6 c4 g6",
+      "d4 d5 c4", "d4 d5 c4 e6", "d4 d5 c4 c6", "e4 e5 Nf3 Nc6 Bc4 Bc5",
+      "e4 e5 Nf3 Nc6 Bc4 Nf6", "e4 e5 Nf3 Nc6 Bb5 a6", "e4 c5 Nf3 d6",
+      "e4 c5 Nf3 Nc6", "e4 c5 Nf3 e6", "d4 Nf6 c4 e6 Nc3 Bb4", "d4 Nf6 c4 g6 Nc3 Bg7"
+    ];
 
     const game = new Chess();
     let selectedSquare = null;
@@ -352,23 +356,13 @@
 
     function renderBoard(fenOverride = null, activeReviewItem = null) {
       const boardEl = document.getElementById('board');
-      const boardWrapper = document.getElementById('board-wrapper');
       boardEl.innerHTML = '';
 
       const tempGame = fenOverride ? new Chess(fenOverride) : game;
       const boardState = tempGame.board();
 
-      // Handle Board Auto-rotation in Local 2-Player mode
       const isLocalMode = document.getElementById('game-mode').value === 'local';
-      if (isLocalMode && !isReviewing) {
-        if (tempGame.turn() === 'b') {
-          boardWrapper.classList.add('flipped');
-        } else {
-          boardWrapper.classList.remove('flipped');
-        }
-      } else if (!isReviewing) {
-        boardWrapper.classList.remove('flipped');
-      }
+      const rotatePieces = isLocalMode && !isReviewing && tempGame.turn() === 'b';
 
       for (let r = 0; r < 8; r++) {
         for (let c = 0; c < 8; c++) {
@@ -379,7 +373,10 @@
           const piece = boardState[r][c];
           if (piece) {
             const pieceChar = piece.color === 'w' ? piece.type.toUpperCase() : piece.type.toLowerCase();
-            sq.textContent = PIECE_SYMBOLS[pieceChar];
+            const pieceSpan = document.createElement('span');
+            pieceSpan.className = 'piece' + (rotatePieces ? ' rotate-180' : '');
+            pieceSpan.textContent = PIECE_SYMBOLS[pieceChar];
+            sq.appendChild(pieceSpan);
           }
 
           if (!isReviewing && selectedSquare === sqName) sq.classList.add('selected');
@@ -399,6 +396,7 @@
       }
 
       updateStatus();
+      requestLiveEval();
     }
 
     function handleSquareClick(square) {
@@ -513,6 +511,7 @@
           if (line === 'uciok' || line === 'readyok') {
             engineReady = true;
             updateStatus();
+            requestLiveEval();
           }
 
           if (line.includes('score cp') || line.includes('score mate')) {
@@ -521,7 +520,7 @@
 
           if (line.startsWith('bestmove') && !isAnalyzing && !isReviewing) {
             const isLocalMode = document.getElementById('game-mode').value === 'local';
-            if (!isLocalMode) {
+            if (!isLocalMode && isThinking) {
               const moveStr = line.split(' ')[1];
               if (moveStr && moveStr !== '(none)') {
                 game.move({
@@ -540,7 +539,7 @@
         engineWorker.postMessage('isready');
         setDifficulty();
       } catch (err) {
-        statusEl.textContent = "Error loading Stockfish.";
+        statusEl.textContent = "Error loading Stockfish engine.";
       }
     }
 
@@ -562,6 +561,14 @@
       }
     }
 
+    function requestLiveEval() {
+      if (!engineWorker || !engineReady || isThinking || isAnalyzing || isReviewing) return;
+      if (!document.getElementById('toggle-eval').checked) return;
+
+      engineWorker.postMessage(`position fen ${game.fen()}`);
+      engineWorker.postMessage('go depth 10');
+    }
+
     function setDifficulty() {
       if (!engineWorker) return;
       const level = document.getElementById('difficulty').value;
@@ -577,67 +584,64 @@
       engineWorker.postMessage('go depth 12');
     }
 
-    // Chess.com Classification Rule Classifier
-    function classifyChessDotComMove(move, evalLoss, moveIndex, preEval, postEval, isBestMoveMatch, opponentPreviousEvalLoss) {
-      // 1. Book Move (First 5 moves of game)
-      if (moveIndex < 6) {
+    function classifyChessDotComMove(move, evalLoss, moveIndex, preEval, postEval, isBestMoveMatch, opponentPreviousEvalLoss, currentSanSequence) {
+      // 1. Precise Book Move Classifier
+      if (KNOWN_BOOK_MOVES.includes(currentSanSequence) && moveIndex < 10) {
         return { label: 'Book', class: 'badge-book', scoreWeight: 100, comment: 'Standard opening book move.' };
       }
 
-      // 2. Brilliant Move (Sacrifice best move)
+      // 2. Brilliant Move (Material Sacrifice leading to zero evaluation loss)
       const pieceVal = PIECE_VALUES[move.piece] || 1;
       const capturedVal = move.captured ? (PIECE_VALUES[move.captured] || 1) : 0;
-      const isSacrifice = (pieceVal - capturedVal) > 1; // Sacrificing material
+      const isMaterialSacrifice = (pieceVal - capturedVal) >= 2;
 
-      if (isSacrifice && evalLoss <= 15 && postEval >= -50) {
-        return { label: 'Brilliant', class: 'badge-brilliant', scoreWeight: 100, comment: 'Brilliant sacrifice! Tough move to find.' };
+      if (isMaterialSacrifice && evalLoss <= 15 && postEval >= -50) {
+        return { label: 'Brilliant', class: 'badge-brilliant', scoreWeight: 100, comment: 'Brilliant sacrifice! Excellent tactical choice.' };
       }
 
-      // 3. Great Move
-      if (isBestMoveMatch && evalLoss <= 10 && Math.abs(preEval) < 100 && postEval > 180) {
-        return { label: 'Great', class: 'badge-great', scoreWeight: 100, comment: 'Great move! Pivotal swing in the game.' };
+      // 3. Great Move (Crucial swing move)
+      if (isBestMoveMatch && evalLoss <= 10 && preEval < -50 && postEval > 50) {
+        return { label: 'Great', class: 'badge-great', scoreWeight: 100, comment: 'Great move! Pivotal turn of position.' };
       }
 
       // 4. Best Move
-      if (isBestMoveMatch || evalLoss <= 10) {
-        return { label: 'Best', class: 'badge-best', scoreWeight: 100, comment: 'Engine\'s top choice.' };
+      if (isBestMoveMatch || evalLoss <= 12) {
+        return { label: 'Best', class: 'badge-best', scoreWeight: 100, comment: 'Engine\'s top recommended move.' };
       }
 
       // 5. Excellent
-      if (evalLoss <= 25) {
-        return { label: 'Excellent', class: 'badge-excellent', scoreWeight: 90, comment: 'Almost as good as the best move.' };
+      if (evalLoss <= 30) {
+        return { label: 'Excellent', class: 'badge-excellent', scoreWeight: 90, comment: 'Nearly as strong as the top move.' };
       }
 
       // 6. Good
-      if (evalLoss <= 50) {
-        return { label: 'Good', class: 'badge-good', scoreWeight: 75, comment: 'A decent move, maintaining game control.' };
+      if (evalLoss <= 65) {
+        return { label: 'Good', class: 'badge-good', scoreWeight: 75, comment: 'A solid move, maintaining position balance.' };
       }
 
       // 7. Inaccuracy
-      if (evalLoss <= 90) {
-        return { label: 'Inaccuracy', class: 'badge-inaccuracy', scoreWeight: 50, comment: 'Inaccuracy. A weaker option was played.' };
+      if (evalLoss <= 120) {
+        return { label: 'Inaccuracy', class: 'badge-inaccuracy', scoreWeight: 50, comment: 'Inaccuracy. Gave away part of your advantage.' };
       }
 
       // 8. Mistake
-      if (evalLoss <= 200) {
-        return { label: 'Mistake', class: 'badge-mistake', scoreWeight: 20, comment: 'Mistake! Immediately worsened your position.' };
+      if (evalLoss <= 220) {
+        return { label: 'Mistake', class: 'badge-mistake', scoreWeight: 20, comment: 'Mistake! Weakened your position.' };
       }
 
-      // 9. Miss (Opponent blundered prior, but player failed to punish)
+      // 9. Miss
       if (opponentPreviousEvalLoss > 150 && evalLoss > 150) {
-        return { label: 'Miss', class: 'badge-miss', scoreWeight: 10, comment: 'Missed opportunity to punish opponent\'s blunder!' };
+        return { label: 'Miss', class: 'badge-miss', scoreWeight: 10, comment: 'Missed opportunity to capitalize on opponent\'s mistake!' };
       }
 
       // 10. Blunder
-      return { label: 'Blunder', class: 'badge-blunder', scoreWeight: 0, comment: 'Blunder! A severe mistake losing material or game control.' };
+      return { label: 'Blunder', class: 'badge-blunder', scoreWeight: 0, comment: 'Blunder! A major oversight that loses material or position.' };
     }
 
-    // Dual Arrow Drawing Helper
     function drawReviewArrows(playedMove, bestMoveFrom, bestMoveTo, isBestMove) {
       const canvas = document.getElementById('arrow-canvas');
       const ctx = canvas.getContext('2d');
       const boardWrapper = document.getElementById('board-wrapper');
-      const isFlipped = boardWrapper.classList.contains('flipped');
       
       const width = boardWrapper.clientWidth;
       const height = boardWrapper.clientHeight;
@@ -651,11 +655,6 @@
       const getCoord = (sq) => {
         let col = sq.charCodeAt(0) - 97;
         let row = 8 - parseInt(sq[1]);
-
-        if (isFlipped) {
-          col = 7 - col;
-          row = 7 - row;
-        }
 
         return {
           x: col * sqSize + sqSize / 2,
@@ -730,9 +729,12 @@
       };
 
       let prevOpponentEvalLoss = 0;
+      let sanSequence = [];
 
       for (let i = 0; i < history.length; i++) {
         const move = history[i];
+        sanSequence.push(move.san);
+        const currentSanString = sanSequence.join(' ');
         
         const { bestMoveLan, score: preEvalWhite } = await evaluatePositionAndBestMove(simGame.fen(), simGame.turn());
         simGame.move(move);
@@ -746,7 +748,7 @@
         const isBestMatch = bestMoveLan && bestMoveLan.startsWith(playerMoveLan);
 
         const classification = classifyChessDotComMove(
-          move, evalLoss, i, preEvalWhite, postEvalWhite, isBestMatch, prevOpponentEvalLoss
+          move, evalLoss, i, preEvalWhite, postEvalWhite, isBestMatch, prevOpponentEvalLoss, currentSanString
         );
 
         counts[classification.label]++;
@@ -892,7 +894,9 @@
 
     document.getElementById('toggle-eval').addEventListener('change', (e) => {
       document.getElementById('eval-container').style.display = e.target.checked ? 'flex' : 'none';
+      requestLiveEval();
     });
+    
     document.getElementById('difficulty').addEventListener('change', setDifficulty);
     document.getElementById('analyze-btn').addEventListener('click', runAnalysis);
     document.getElementById('current-pos-btn').addEventListener('click', returnToCurrentPosition);
@@ -913,24 +917,6 @@
 
     renderBoard();
     initEngine();
-  </script>
-</body>
-</html>
-<!DOCTYPE html>
-<html>
-<head>
-  <meta charset="UTF-8">
-  <title>My Game</title>
-  <link rel="manifest" href="manifest.json">
-</head>
-<body>
-
-  <script>
-    if ('serviceWorker' in navigator) {
-      window.addEventListener('load', () => {
-        navigator.serviceWorker.register('./sw.js');
-      });
-    }
   </script>
 </body>
 </html>
