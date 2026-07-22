@@ -1,8 +1,9 @@
-const CACHE_NAME = 'single-file-game-v1';
+const CACHE_NAME = 'gemchess-cache-v2';
 const ASSETS_TO_CACHE = [
   './',
   './index.html',
-  './icon-192.png'
+  './manifest.json',
+  './gemchess-icon.png' // Just list your single icon file here!
 ];
 
 self.addEventListener('install', (event) => {
