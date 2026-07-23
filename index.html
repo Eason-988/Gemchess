@@ -89,12 +89,6 @@
       width: 100%;
     }
 
-    /* Rotates piece images 180° on Black's turn in Local Mode */
-    .rotate-180 img {
-      transform: rotate(180deg);
-      transition: transform 0.2s ease-in-out;
-    }
-
     #status {
       margin-top: 0.5rem;
       font-weight: bold;
@@ -198,7 +192,7 @@
         <label for="game-mode">Mode:</label>
         <select id="game-mode">
           <option value="ai" selected>Player vs Stockfish</option>
-          <option value="local">Local 2-Player (Rotate Pieces)</option>
+          <option value="local">Local 2-Player (Flip Turn)</option>
         </select>
       </div>
 
@@ -264,16 +258,16 @@
     let engineReady = false;
     let isAnalyzing = false;
     let isReviewing = false;
-    let analysisData = [];
 
-    // --- Piece Rotation Logic for Local Mode ---
-    function updatePieceRotation() {
+    // --- Native Board Orientation Sync ---
+    function updateBoardOrientation() {
+      if (!board) return;
       const isLocal = $('#game-mode').val() === 'local';
       
       if (isLocal && game.turn() === 'b' && !isReviewing) {
-        $('#board').addClass('rotate-180');
+        board.orientation('black');
       } else {
-        $('#board').removeClass('rotate-180');
+        board.orientation('white');
       }
     }
 
@@ -283,11 +277,9 @@
 
       const isLocal = $('#game-mode').val() === 'local';
       if (!isLocal) {
-        // AI Mode: player is White only
         if (piece.search(/^b/) !== -1) return false;
       }
 
-      // Do not allow dragging pieces of the wrong turn
       if ((game.turn() === 'w' && piece.search(/^b/) !== -1) ||
           (game.turn() === 'b' && piece.search(/^w/) !== -1)) {
         return false;
@@ -334,7 +326,7 @@
       let moveColor = game.turn() === 'b' ? 'Black' : 'White';
       const isLocal = $('#game-mode').val() === 'local';
 
-      updatePieceRotation();
+      updateBoardOrientation();
 
       if (isReviewing) {
         $('#review-mode-banner').show();
