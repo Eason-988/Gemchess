@@ -359,35 +359,28 @@
     }
 
     // --- Engine Integration ---
-// Initializes Stockfish 18 WASM safely bypassing Cross-Origin Worker restrictions
+// Initializes locally hosted Stockfish 18 WASM
 function initEngine() {
-  const engineWorkerUrl = 'https://cdn.jsdelivr.net/npm/stockfish@18.0.0/stockfish-18-single.js';
-
   try {
-    // Create a local inline script that imports the CDN file, satisfying the Same-Origin Policy
-    const blobCode = `importScripts('${engineWorkerUrl}');`;
-    const blob = new Blob([blobCode], { type: 'application/javascript' });
-    const blobUrl = URL.createObjectURL(blob);
+    // Instantiate Web Worker directly using relative path to local file
+    engineWorker = new Worker('./stockfish-18-single.js');
 
-    // Instantiate Web Worker using the local Blob URL
-    engineWorker = new Worker(blobUrl);
-
-    // Message handler for Stockfish responses
+    // Handle messages coming from Stockfish 18
     engineWorker.onmessage = function (e) {
       const line = typeof e.data === 'string' ? e.data : '';
 
-      // Check UCI readiness handshake
+      // UCI handshake confirmation
       if (line === 'uciok' || line === 'readyok') {
         engineReady = true;
         updateStatus();
       }
 
-      // Parse evaluation score outputs
+      // Parse live evaluation output
       if (line.includes('score cp') || line.includes('score mate')) {
         parseEvalLine(line);
       }
 
-      // Parse AI best move decisions
+      // Parse AI move decisions
       if (line.startsWith('bestmove') && !isAnalyzing && !isReviewing) {
         const isLocal = $('#game-mode').val() === 'local';
         if (!isLocal && isThinking) {
@@ -406,25 +399,15 @@ function initEngine() {
       }
     };
 
-    // Send UCI protocol startup sequence
+    // Initialize UCI protocol
     engineWorker.postMessage('uci');
     engineWorker.postMessage('isready');
     setDifficulty();
   } catch (err) {
-    console.error("Stockfish 18 WASM initialization error:", err);
-    $('#status').text("Failed to load Stockfish 18 engine.");
+    console.error("Local Stockfish 18 initialization failed:", err);
+    $('#status').text("Failed to load local Stockfish 18 engine.");
   }
 }
-
-    function triggerEngineMove() {
-      if (!engineWorker || game.game_over() || isAnalyzing || isReviewing) return;
-      isThinking = true;
-      updateStatus();
-
-      engineWorker.postMessage(`position fen ${game.fen()}`);
-      engineWorker.postMessage('go depth 12');
-    }
-
     function setDifficulty() {
       if (!engineWorker) return;
       const level = $('#difficulty').val();
