@@ -1,12 +1,9 @@
-const CACHE_NAME = 'gemchess-v2';
-
-// Local assets to pre-cache for full offline play
 const ASSETS_TO_CACHE = [
   './',
   './index.html',
   './manifest.json',
   './gemchess-icon.png',
-  './stockfish-18-single.js'
+  './stockfish-18-lite-single.js'
 ];
 
 // Install Event - Pre-cache shell assets

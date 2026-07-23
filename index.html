@@ -362,8 +362,7 @@
 // Initializes locally hosted Stockfish 18 WASM
 function initEngine() {
   try {
-    // Instantiate Web Worker directly using relative path to local file
-    engineWorker = new Worker('./stockfish-18-single.js');
+    engineWorker = new Worker('./stockfish-18-lite-single.js');
 
     // Handle messages coming from Stockfish 18
     engineWorker.onmessage = function (e) {
