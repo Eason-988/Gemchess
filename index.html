@@ -6,7 +6,6 @@
   <title>Chess PWA with Chessboard.js & Stockfish</title>
   
   <link rel="manifest" href="manifest.json">
-
   <link rel="stylesheet" href="https://unpkg.com/@chrisoakman/chessboardjs@1.0.0/dist/chessboard-1.0.0.min.css">
 
   <style>
@@ -359,66 +358,68 @@
     }
 
     // --- Engine Integration ---
-// Initializes locally hosted Stockfish 18 WASM
-function initEngine() {
-  try {
-    engineWorker = new Worker('./stockfish-18-lite-single.js');
+    function initEngine() {
+      try {
+        engineWorker = new Worker('./stockfish-18-lite-single.js');
 
-    // Handle messages coming from Stockfish 18
-    engineWorker.onmessage = function (e) {
-      const line = typeof e.data === 'string' ? e.data : '';
+        // Handle messages coming from Stockfish 18
+        engineWorker.onmessage = function (e) {
+          const line = typeof e.data === 'string' ? e.data : '';
 
-      // UCI handshake confirmation
-      if (line === 'uciok' || line === 'readyok') {
-        engineReady = true;
-        updateStatus();
-      }
-
-      // Parse live evaluation output
-      if (line.includes('score cp') || line.includes('score mate')) {
-        parseEvalLine(line);
-      }
-
-      // Parse AI move decisions
-      if (line.startsWith('bestmove') && !isAnalyzing && !isReviewing) {
-        const isLocal = $('#game-mode').val() === 'local';
-        if (!isLocal && isThinking) {
-          const moveStr = line.split(' ')[1];
-          if (moveStr && moveStr !== '(none)') {
-            game.move({
-              from: moveStr.substring(0, 2),
-              to: moveStr.substring(2, 4),
-              promotion: moveStr[4] || 'q'
-            });
-            board.position(game.fen());
+          // UCI handshake confirmation
+          if (line === 'uciok' || line === 'readyok') {
+            engineReady = true;
+            updateStatus();
           }
-          isThinking = false;
-          updateStatus();
-        }
+
+          // Parse live evaluation output
+          if (line.includes('score cp') || line.includes('score mate')) {
+            parseEvalLine(line);
+          }
+
+          // Parse AI move decisions
+          if (line.startsWith('bestmove') && !isAnalyzing && !isReviewing) {
+            const isLocal = $('#game-mode').val() === 'local';
+            if (!isLocal && isThinking) {
+              const moveStr = line.split(' ')[1];
+              if (moveStr && moveStr !== '(none)') {
+                game.move({
+                  from: moveStr.substring(0, 2),
+                  to: moveStr.substring(2, 4),
+                  promotion: moveStr[4] || 'q'
+                });
+                board.position(game.fen());
+              }
+              isThinking = false;
+              updateStatus();
+            }
+          }
+        };
+
+        // Initialize UCI protocol
+        engineWorker.postMessage('uci');
+        engineWorker.postMessage('isready');
+        setDifficulty();
+      } catch (err) {
+        console.error("Local Stockfish 18 initialization failed:", err);
+        $('#status').text("Failed to load local Stockfish 18 engine.");
       }
-    };
+    }
 
-function triggerEngineMove() {
-  if (!engineWorker || !engineReady || isThinking) return;
-  
-  isThinking = true;
-  updateStatus();
+    // Standalone function defined in global scope
+    function triggerEngineMove() {
+      if (!engineWorker || !engineReady || isThinking) return;
+      
+      isThinking = true;
+      updateStatus();
 
-  // Send current board position to Stockfish
-  engineWorker.postMessage('position fen ' + game.fen());
-  
-  // Tell Stockfish to calculate a move (1-second search depth)
-  engineWorker.postMessage('go movetime 1000');
-}
-    // Initialize UCI protocol
-    engineWorker.postMessage('uci');
-    engineWorker.postMessage('isready');
-    setDifficulty();
-  } catch (err) {
-    console.error("Local Stockfish 18 initialization failed:", err);
-    $('#status').text("Failed to load local Stockfish 18 engine.");
-  }
-}
+      // Send current board position to Stockfish
+      engineWorker.postMessage('position fen ' + game.fen());
+      
+      // Tell Stockfish to calculate a move (1-second search depth)
+      engineWorker.postMessage('go movetime 1000');
+    }
+
     function setDifficulty() {
       if (!engineWorker) return;
       const level = $('#difficulty').val();
