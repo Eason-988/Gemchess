@@ -89,6 +89,12 @@
       width: 100%;
     }
 
+    /* Rotates piece images 180° on Black's turn in Local Mode */
+    .rotate-180 img {
+      transform: rotate(180deg);
+      transition: transform 0.2s ease-in-out;
+    }
+
     #status {
       margin-top: 0.5rem;
       font-weight: bold;
@@ -192,7 +198,7 @@
         <label for="game-mode">Mode:</label>
         <select id="game-mode">
           <option value="ai" selected>Player vs Stockfish</option>
-          <option value="local">Local 2-Player (Flip Board)</option>
+          <option value="local">Local 2-Player (Rotate Pieces)</option>
         </select>
       </div>
 
@@ -260,13 +266,21 @@
     let isReviewing = false;
     let analysisData = [];
 
-    // --- Chessboard.js Drag & Drop Handlers ---
+    // --- Piece Rotation Logic for Local Mode ---
+    function updatePieceRotation() {
+      const isLocal = $('#game-mode').val() === 'local';
+      
+      if (isLocal && game.turn() === 'b' && !isReviewing) {
+        $('#board').addClass('rotate-180');
+      } else {
+        $('#board').removeClass('rotate-180');
+      }
+    }
 
+    // --- Chessboard.js Drag & Drop Handlers ---
     function onDragStart (source, piece, position, orientation) {
-      // Do not allow moves if game over, engine thinking, or analyzing
       if (game.game_over() || isReviewing || isThinking || isAnalyzing || !engineReady) return false;
 
-      // Local 2-Player mode allows moving pieces matching the turn
       const isLocal = $('#game-mode').val() === 'local';
       if (!isLocal) {
         // AI Mode: player is White only
@@ -281,24 +295,18 @@
     }
 
     function onDrop (source, target) {
-      // Check if move is legal with chess.js
       const move = game.move({
         from: source,
         to: target,
-        promotion: 'q' // Auto-promote to queen for simplicity
+        promotion: 'q'
       });
 
-      // Illegal move
       if (move === null) return 'snapback';
 
       updateStatus();
 
       const isLocal = $('#game-mode').val() === 'local';
-      if (isLocal) {
-        // Automatically flip board turn by turn in local mode
-        board.flip();
-      } else if (!game.game_over()) {
-        // Trigger Stockfish reply
+      if (!isLocal && !game.game_over()) {
         triggerEngineMove();
       }
     }
@@ -308,7 +316,6 @@
     }
 
     // --- Board & UI Setup ---
-
     function initBoard() {
       const config = {
         draggable: true,
@@ -326,6 +333,8 @@
       let status = '';
       let moveColor = game.turn() === 'b' ? 'Black' : 'White';
       const isLocal = $('#game-mode').val() === 'local';
+
+      updatePieceRotation();
 
       if (isReviewing) {
         $('#review-mode-banner').show();
@@ -358,7 +367,6 @@
     }
 
     // --- Engine Integration ---
-
     async function initEngine() {
       const engineUrl = 'https://cdnjs.cloudflare.com/ajax/libs/stockfish.js/10.0.2/stockfish.js';
 
@@ -470,10 +478,8 @@
     }
 
     // --- Controls & Event Listeners ---
-
     $('#reset-btn').on('click', () => {
       game.reset();
-      board.orientation('white');
       board.position('start');
       isThinking = false;
       isAnalyzing = false;
@@ -487,7 +493,7 @@
     $('#game-mode').on('change', function () {
       const isLocal = $(this).val() === 'local';
       $('#ai-difficulty-wrapper').toggle(!isLocal);
-      board.orientation('white');
+      updateStatus();
     });
 
     $('#difficulty').on('change', setDifficulty);
