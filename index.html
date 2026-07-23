@@ -1,12 +1,12 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <link rel="icon" type="image/png" href="./gemchess-icon.png">
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Chess PWA with Chessboard.js & Stockfish</title>
   
   <link rel="manifest" href="manifest.json">
+  <link rel="shortcut icon" href="data:image/x-icon;," type="image/x-icon">
   <link rel="stylesheet" href="https://unpkg.com/@chrisoakman/chessboardjs@1.0.0/dist/chessboard-1.0.0.min.css">
 
   <style>
@@ -137,7 +137,8 @@
 
     .analysis-row {
       display: flex;
-      flex-direction: column;
+      justify-content: space-between;
+      align-items: center;
       padding: 6px;
       border-bottom: 1px solid #333;
       cursor: pointer;
@@ -150,33 +151,16 @@
       border-left: 4px solid #3b82f6;
     }
 
-    .analysis-header {
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-    }
-    .analysis-comment {
-      font-size: 0.78rem;
-      color: #aaa;
-      font-style: italic;
-      margin-top: 2px;
-    }
-
     .badge {
       padding: 2px 6px;
       border-radius: 3px;
       font-weight: bold;
       font-size: 0.72rem;
     }
-    .badge-brilliant { background: #155e75; color: #fff; }
-    .badge-great { background: #0284c7; color: #fff; }
     .badge-best { background: #10b981; color: #fff; }
-    .badge-excellent { background: #22c55e; color: #fff; }
     .badge-good { background: #3b82f6; color: #fff; }
-    .badge-book { background: #d97706; color: #fff; }
     .badge-inaccuracy { background: #f59e0b; color: #fff; }
     .badge-mistake { background: #f97316; color: #fff; }
-    .badge-miss { background: #a855f7; color: #fff; }
     .badge-blunder { background: #ef4444; color: #fff; }
   </style>
 
@@ -255,9 +239,12 @@
     const game = new Chess();
     let engineWorker = null;
     let isThinking = false;
+    let evaluatingLive = false;
     let engineReady = false;
     let isAnalyzing = false;
     let isReviewing = false;
+    let currentDepth = 0;
+    let moveHistoryFens = [];
 
     // --- Native Board Orientation Sync ---
     function updateBoardOrientation() {
@@ -341,7 +328,8 @@
       } else if (game.in_draw()) {
         status = 'Game over, drawn position.';
       } else if (isThinking) {
-        status = 'Stockfish is thinking...';
+        const depthText = currentDepth > 0 ? ` (Depth ${currentDepth})` : '';
+        status = `Stockfish is thinking...${depthText}`;
       } else {
         if (isLocal) {
           status = `${moveColor}'s turn to move.`;
@@ -351,6 +339,10 @@
 
         if (game.in_check()) {
           status += `, ${moveColor} is in check!`;
+        }
+
+        if (currentDepth > 0 && $('#toggle-eval').is(':checked')) {
+          status += ` | Depth ${currentDepth}`;
         }
       }
 
@@ -363,14 +355,24 @@
       try {
         engineWorker = new Worker('./stockfish-18-lite-single.js');
 
-        // Handle messages coming from Stockfish 18
         engineWorker.onmessage = function (e) {
           const line = typeof e.data === 'string' ? e.data : '';
 
-          // UCI handshake confirmation
           if (line === 'uciok' || line === 'readyok') {
             engineReady = true;
             updateStatus();
+          }
+
+          // Parse current depth from info lines
+          if (line.includes('info depth ')) {
+            const depthMatch = line.match(/info depth (\d+)/);
+            if (depthMatch) {
+              currentDepth = parseInt(depthMatch[1], 10);
+              if (isThinking) {
+                const depthText = currentDepth > 0 ? ` (Depth ${currentDepth})` : '';
+                $('#status').text(`Stockfish is thinking...${depthText}`);
+              }
+            }
           }
 
           // Parse live evaluation output
@@ -378,10 +380,14 @@
             parseEvalLine(line);
           }
 
-          // Parse AI move decisions
-          if (line.startsWith('bestmove') && !isAnalyzing && !isReviewing) {
-            const isLocal = $('#game-mode').val() === 'local';
-            if (!isLocal && isThinking) {
+          // Handle move decision outputs
+          if (line.startsWith('bestmove')) {
+            if (evaluatingLive) {
+              evaluatingLive = false;
+              return;
+            }
+
+            if (isThinking && !isAnalyzing && !isReviewing) {
               const moveStr = line.split(' ')[1];
               if (moveStr && moveStr !== '(none)') {
                 game.move({
@@ -397,7 +403,6 @@
           }
         };
 
-        // Initialize UCI protocol
         engineWorker.postMessage('uci');
         engineWorker.postMessage('isready');
         setDifficulty();
@@ -407,18 +412,17 @@
       }
     }
 
-    // Standalone function defined in global scope
     function triggerEngineMove() {
-      if (!engineWorker || !engineReady || isThinking) return;
+      if (!engineWorker || !engineReady || isThinking || isAnalyzing) return;
       
       isThinking = true;
+      evaluatingLive = false;
+      currentDepth = 0;
       updateStatus();
 
-      // Send current board position to Stockfish
+      engineWorker.postMessage('stop');
       engineWorker.postMessage('position fen ' + game.fen());
-      
-      // Tell Stockfish to calculate a move (1-second search depth)
-      engineWorker.postMessage('go movetime 1000');
+      engineWorker.postMessage('go movetime 1200');
     }
 
     function setDifficulty() {
@@ -468,17 +472,148 @@
       if (!engineWorker || !engineReady || isThinking || isAnalyzing || isReviewing) return;
       if (!$('#toggle-eval').is(':checked')) return;
 
+      evaluatingLive = true;
       engineWorker.postMessage(`position fen ${game.fen()}`);
-      engineWorker.postMessage('go depth 10');
+      engineWorker.postMessage('go depth 12');
     }
 
-    // --- Controls & Event Listeners ---
+    // --- Full Game Analysis Feature ---
+    async function analyzeGame() {
+      const history = game.history({ verbose: true });
+      if (history.length === 0) {
+        alert("Play a few moves first before analyzing!");
+        return;
+      }
+
+      isAnalyzing = true;
+      $('#analyze-btn').prop('disabled', true).text("Analyzing...");
+      $('#status').text("Analyzing game moves...");
+      $('#analysis-panel').show();
+      $('#analysis-list').empty();
+
+      const tempGame = new Chess();
+      moveHistoryFens = [tempGame.fen()];
+      const evaluations = [];
+
+      // Initial board position eval
+      evaluations.push(await evaluateFen(tempGame.fen()));
+
+      for (let i = 0; i < history.length; i++) {
+        tempGame.move(history[i]);
+        moveHistoryFens.push(tempGame.fen());
+        const evalScore = await evaluateFen(tempGame.fen());
+        evaluations.push(evalScore);
+        $('#status').text(`Analyzing move ${i + 1} of ${history.length}...`);
+      }
+
+      // Calculate accuracy & move classifications
+      let totalAcc = 0;
+      let stats = { Best: 0, Good: 0, Inaccuracy: 0, Mistake: 0, Blunder: 0 };
+
+      for (let i = 0; i < history.length; i++) {
+        const prevEval = evaluations[i];
+        const currEval = evaluations[i + 1];
+        const move = history[i];
+
+        // Evaluate loss from the mover's perspective
+        let evalDiff = (move.color === 'w') ? (prevEval - currEval) : (currEval - prevEval);
+        evalDiff = Math.max(0, evalDiff); // Only positive losses
+
+        let badgeClass = 'badge-good';
+        let category = 'Good';
+
+        if (evalDiff < 15) { badgeClass = 'badge-best'; category = 'Best'; }
+        else if (evalDiff < 50) { badgeClass = 'badge-good'; category = 'Good'; }
+        else if (evalDiff < 120) { badgeClass = 'badge-inaccuracy'; category = 'Inaccuracy'; }
+        else if (evalDiff < 250) { badgeClass = 'badge-mistake'; category = 'Mistake'; }
+        else { badgeClass = 'badge-blunder'; category = 'Blunder'; }
+
+        stats[category]++;
+
+        const moveAcc = Math.max(0, 100 - (evalDiff / 3));
+        totalAcc += moveAcc;
+
+        const rowHtml = `
+          <div class="analysis-row" data-index="${i + 1}">
+            <div><strong>${i + 1}. ${move.san}</strong> (${move.color === 'w' ? 'White' : 'Black'})</div>
+            <span class="badge ${badgeClass}">${category}</span>
+          </div>
+        `;
+        $('#analysis-list').append(rowHtml);
+      }
+
+      const overallAccuracy = Math.round(totalAcc / history.length);
+      $('#accuracy-score').text(`${overallAccuracy}%`);
+      $('#summary-stats').html(`
+        <span class="badge badge-best">Best: ${stats.Best}</span>
+        <span class="badge badge-good">Good: ${stats.Good}</span>
+        <span class="badge badge-inaccuracy">Inacc: ${stats.Inaccuracy}</span>
+        <span class="badge badge-mistake">Mistakes: ${stats.Mistake}</span>
+        <span class="badge badge-blunder">Blunders: ${stats.Blunder}</span>
+      `);
+
+      isAnalyzing = false;
+      $('#analyze-btn').prop('disabled', false).text("Analyze Game");
+      updateStatus();
+    }
+
+    function evaluateFen(fen) {
+      return new Promise((resolve) => {
+        let lastScore = 0;
+        
+        function onEvalMessage(e) {
+          const line = typeof e.data === 'string' ? e.data : '';
+
+          if (line.includes('score cp')) {
+            const tokens = line.split(' ');
+            const cpIndex = tokens.indexOf('cp');
+            if (cpIndex !== -1) {
+              lastScore = parseInt(tokens[cpIndex + 1], 10);
+            }
+          } else if (line.includes('score mate')) {
+            const tokens = line.split(' ');
+            const mateIndex = tokens.indexOf('mate');
+            if (mateIndex !== -1) {
+              const mateIn = parseInt(tokens[mateIndex + 1], 10);
+              lastScore = mateIn > 0 ? 10000 : -10000;
+            }
+          }
+
+          if (line.startsWith('bestmove')) {
+            engineWorker.removeEventListener('message', onEvalMessage);
+            resolve(lastScore);
+          }
+        }
+
+        engineWorker.addEventListener('message', onEvalMessage);
+        engineWorker.postMessage(`position fen ${fen}`);
+        engineWorker.postMessage('go depth 10');
+      });
+    }
+
+    // --- Event Listeners ---
+    $('#analyze-btn').on('click', analyzeGame);
+
+    $(document).on('click', '.analysis-row', function() {
+      const idx = $(this).data('index');
+      if (moveHistoryFens[idx]) {
+        isReviewing = true;
+        board.position(moveHistoryFens[idx]);
+        $('.analysis-row').removeClass('active-review');
+        $(this).addClass('active-review');
+        $('#current-pos-btn').prop('disabled', false);
+        updateStatus();
+      }
+    });
+
     $('#reset-btn').on('click', () => {
       game.reset();
       board.position('start');
       isThinking = false;
       isAnalyzing = false;
       isReviewing = false;
+      evaluatingLive = false;
+      currentDepth = 0;
       $('#analysis-panel').hide();
       $('#current-pos-btn').prop('disabled', true);
       updateEvalBar(0);
