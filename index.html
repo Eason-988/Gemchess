@@ -359,14 +359,18 @@
     }
 
     // --- Engine Integration ---
-// Initializes full single-threaded Stockfish 18 WASM
+// Initializes Stockfish 18 WASM safely bypassing Cross-Origin Worker restrictions
 function initEngine() {
-  // Full Stockfish 18 single-threaded engine URL (~108 MB with complete NNUE network)
   const engineWorkerUrl = 'https://cdn.jsdelivr.net/npm/stockfish@18.0.0/stockfish-18-single.js';
 
   try {
-    // Instantiate Web Worker directly with the Stockfish 18 WASM worker
-    engineWorker = new Worker(engineWorkerUrl);
+    // Create a local inline script that imports the CDN file, satisfying the Same-Origin Policy
+    const blobCode = `importScripts('${engineWorkerUrl}');`;
+    const blob = new Blob([blobCode], { type: 'application/javascript' });
+    const blobUrl = URL.createObjectURL(blob);
+
+    // Instantiate Web Worker using the local Blob URL
+    engineWorker = new Worker(blobUrl);
 
     // Message handler for Stockfish responses
     engineWorker.onmessage = function (e) {
