@@ -1,14 +1,17 @@
 const CACHE_NAME = 'gemchess-v4';
 
-const ASSETS_TO_CACHE = [
+const CACHE_NAME = 'gemchess-v1';
+const urlsToCache = [
   './',
   './index.html',
   './manifest.json',
-  './gemchess-icon.png',
   './stockfish-18-lite-single.js',
-  './stockfish-18-lite-single.wasm'
+  './stockfish-18-lite-single.wasm',
+  'https://code.jquery.com/jquery-3.6.0.min.js',
+  'https://cdnjs.cloudflare.com/ajax/libs/chess.js/0.10.3/chess.min.js',
+  'https://unpkg.com/@chrisoakman/chessboardjs@1.0.0/dist/chessboard-1.0.0.min.css',
+  'https://unpkg.com/@chrisoakman/chessboardjs@1.0.0/dist/chessboard-1.0.0.min.js'
 ];
-
 self.addEventListener('install', (event) => {
   event.waitUntil(
     caches.open(CACHE_NAME).then((cache) => {
