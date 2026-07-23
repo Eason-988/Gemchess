@@ -359,55 +359,58 @@
     }
 
     // --- Engine Integration ---
-    async function initEngine() {
-      const engineUrl = 'https://cdnjs.cloudflare.com/ajax/libs/stockfish.js/10.0.2/stockfish.js';
+// Initializes full single-threaded Stockfish 18 WASM
+function initEngine() {
+  // Full Stockfish 18 single-threaded engine URL (~108 MB with complete NNUE network)
+  const engineWorkerUrl = 'https://cdn.jsdelivr.net/npm/stockfish@18.0.0/stockfish-18-single.js';
 
-      try {
-        const response = await fetch(engineUrl);
-        if (!response.ok) throw new Error("Engine download failed.");
-        
-        const scriptText = await response.text();
-        const blob = new Blob([scriptText], { type: 'application/javascript' });
-        
-        engineWorker = new Worker(URL.createObjectURL(blob));
+  try {
+    // Instantiate Web Worker directly with the Stockfish 18 WASM worker
+    engineWorker = new Worker(engineWorkerUrl);
 
-        engineWorker.onmessage = function (e) {
-          const line = typeof e.data === 'string' ? e.data : '';
+    // Message handler for Stockfish responses
+    engineWorker.onmessage = function (e) {
+      const line = typeof e.data === 'string' ? e.data : '';
 
-          if (line === 'uciok' || line === 'readyok') {
-            engineReady = true;
-            updateStatus();
-          }
-
-          if (line.includes('score cp') || line.includes('score mate')) {
-            parseEvalLine(line);
-          }
-
-          if (line.startsWith('bestmove') && !isAnalyzing && !isReviewing) {
-            const isLocal = $('#game-mode').val() === 'local';
-            if (!isLocal && isThinking) {
-              const moveStr = line.split(' ')[1];
-              if (moveStr && moveStr !== '(none)') {
-                game.move({
-                  from: moveStr.substring(0, 2),
-                  to: moveStr.substring(2, 4),
-                  promotion: moveStr[4] || 'q'
-                });
-                board.position(game.fen());
-              }
-              isThinking = false;
-              updateStatus();
-            }
-          }
-        };
-
-        engineWorker.postMessage('uci');
-        engineWorker.postMessage('isready');
-        setDifficulty();
-      } catch (err) {
-        $('#status').text("Error loading Stockfish engine.");
+      // Check UCI readiness handshake
+      if (line === 'uciok' || line === 'readyok') {
+        engineReady = true;
+        updateStatus();
       }
-    }
+
+      // Parse evaluation score outputs
+      if (line.includes('score cp') || line.includes('score mate')) {
+        parseEvalLine(line);
+      }
+
+      // Parse AI best move decisions
+      if (line.startsWith('bestmove') && !isAnalyzing && !isReviewing) {
+        const isLocal = $('#game-mode').val() === 'local';
+        if (!isLocal && isThinking) {
+          const moveStr = line.split(' ')[1];
+          if (moveStr && moveStr !== '(none)') {
+            game.move({
+              from: moveStr.substring(0, 2),
+              to: moveStr.substring(2, 4),
+              promotion: moveStr[4] || 'q'
+            });
+            board.position(game.fen());
+          }
+          isThinking = false;
+          updateStatus();
+        }
+      }
+    };
+
+    // Send UCI protocol startup sequence
+    engineWorker.postMessage('uci');
+    engineWorker.postMessage('isready');
+    setDifficulty();
+  } catch (err) {
+    console.error("Stockfish 18 WASM initialization error:", err);
+    $('#status').text("Failed to load Stockfish 18 engine.");
+  }
+}
 
     function triggerEngineMove() {
       if (!engineWorker || game.game_over() || isAnalyzing || isReviewing) return;
