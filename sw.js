@@ -1,25 +1,28 @@
-const CACHE_NAME = 'gemchess-v4';
-
 const CACHE_NAME = 'gemchess-v1';
-const urlsToCache = [
+
+// Only cache essential local files
+const ASSETS_TO_CACHE = [
   './',
   './index.html',
   './manifest.json',
   './stockfish-18-lite-single.js',
-  './stockfish-18-lite-single.wasm',
-  'https://code.jquery.com/jquery-3.6.0.min.js',
-  'https://cdnjs.cloudflare.com/ajax/libs/chess.js/0.10.3/chess.min.js',
-  'https://unpkg.com/@chrisoakman/chessboardjs@1.0.0/dist/chessboard-1.0.0.min.css',
-  'https://unpkg.com/@chrisoakman/chessboardjs@1.0.0/dist/chessboard-1.0.0.min.js'
+  './stockfish-18-lite-single.wasm'
 ];
+
+// Install Event
 self.addEventListener('install', (event) => {
   event.waitUntil(
     caches.open(CACHE_NAME).then((cache) => {
-      return cache.addAll(ASSETS_TO_CACHE);
-    }).then(() => self.skipWaiting())
+      // Use addAll with error handling
+      return cache.addAll(ASSETS_TO_CACHE).catch((err) => {
+        console.warn('Failed to cache some assets during install:', err);
+      });
+    })
   );
+  self.skipWaiting();
 });
 
+// Activate Event (Cleanup old caches)
 self.addEventListener('activate', (event) => {
   event.waitUntil(
     caches.keys().then((cacheNames) => {
@@ -30,28 +33,31 @@ self.addEventListener('activate', (event) => {
           }
         })
       );
-    }).then(() => self.clients.claim())
+    })
   );
+  self.clients.claim();
 });
 
+// Fetch Event (Network first, fall back to cache)
 self.addEventListener('fetch', (event) => {
+  // Only intercept GET requests
   if (event.request.method !== 'GET') return;
 
   event.respondWith(
-    caches.match(event.request).then((cachedResponse) => {
-      if (cachedResponse) {
-        return cachedResponse;
-      }
-      return fetch(event.request).then((networkResponse) => {
-        if (!networkResponse || networkResponse.status !== 200 || networkResponse.type !== 'basic') {
-          return networkResponse;
+    fetch(event.request)
+      .then((response) => {
+        // Clone and store successful requests in cache
+        if (response && response.status === 200 && response.type === 'basic') {
+          const responseToCache = response.clone();
+          caches.open(CACHE_NAME).then((cache) => {
+            cache.put(event.request, responseToCache);
+          });
         }
-        const responseToCache = networkResponse.clone();
-        caches.open(CACHE_NAME).then((cache) => {
-          cache.put(event.request, responseToCache);
-        });
-        return networkResponse;
-      });
-    })
+        return response;
+      })
+      .catch(() => {
+        // If offline or network fails, serve from cache
+        return caches.match(event.request);
+      })
   );
 });
