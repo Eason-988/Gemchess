@@ -3,7 +3,9 @@ const ASSETS_TO_CACHE = [
   './',
   './index.html',
   './manifest.json',
-  './gemchess-icon.png' // Just list your single icon file here!
+  './gemchess-icon.png'
+  'https://cdn.jsdelivr.net/npm/stockfish@18.0.0/stockfish-18-single.js',
+  'https://cdn.jsdelivr.net/npm/stockfish@18.0.0/stockfish-18-single.wasm'
 ];
 
 self.addEventListener('install', (event) => {
