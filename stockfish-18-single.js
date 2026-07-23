@@ -1,3 +1,10 @@
+var Module = typeof Module !== 'undefined' ? Module : {};
+Module['locateFile'] = function(path, prefix) {
+  if (path.endsWith('.wasm')) {
+    return 'https://media.githubusercontent.com/media/eason-988/Gemchess/main/stockfish-18-single.wasm';
+  }
+  return prefix + path;
+};
 /*!
  * Stockfish.js 18 (c) 2026, Chess.com, LLC
  * https://github.com/nmrugg/stockfish.js
