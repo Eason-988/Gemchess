@@ -477,119 +477,137 @@
       engineWorker.postMessage('go depth 12');
     }
 
-    // --- Full Game Analysis Feature ---
-    async function analyzeGame() {
-      const history = game.history({ verbose: true });
-      if (history.length === 0) {
-        alert("Play a few moves first before analyzing!");
-        return;
+// --- Full Game Analysis Feature (Fixed WASM Race Conditions) ---
+async function analyzeGame() {
+  const history = game.history({ verbose: true });
+  if (history.length === 0) {
+    alert("Play a few moves first before analyzing!");
+    return;
+  }
+
+  isAnalyzing = true;
+  $('#analyze-btn').prop('disabled', true).text("Analyzing...");
+  $('#status').text("Analyzing game moves...");
+  $('#analysis-panel').show();
+  $('#analysis-list').empty();
+
+  // Stop any active live evaluation or thinking
+  engineWorker.postMessage('stop');
+  await waitForReady();
+
+  const tempGame = new Chess();
+  moveHistoryFens = [tempGame.fen()];
+  const evaluations = [];
+
+  // Initial position eval
+  evaluations.push(await evaluateFen(tempGame.fen()));
+
+  for (let i = 0; i < history.length; i++) {
+    tempGame.move(history[i]);
+    moveHistoryFens.push(tempGame.fen());
+    const evalScore = await evaluateFen(tempGame.fen());
+    evaluations.push(evalScore);
+    $('#status').text(`Analyzing move ${i + 1} of ${history.length}...`);
+  }
+
+  // Calculate accuracy & move classifications
+  let totalAcc = 0;
+  let stats = { Best: 0, Good: 0, Inaccuracy: 0, Mistake: 0, Blunder: 0 };
+
+  for (let i = 0; i < history.length; i++) {
+    const prevEval = evaluations[i];
+    const currEval = evaluations[i + 1];
+    const move = history[i];
+
+    let evalDiff = (move.color === 'w') ? (prevEval - currEval) : (currEval - prevEval);
+    evalDiff = Math.max(0, evalDiff);
+
+    let badgeClass = 'badge-good';
+    let category = 'Good';
+
+    if (evalDiff < 15) { badgeClass = 'badge-best'; category = 'Best'; }
+    else if (evalDiff < 50) { badgeClass = 'badge-good'; category = 'Good'; }
+    else if (evalDiff < 120) { badgeClass = 'badge-inaccuracy'; category = 'Inaccuracy'; }
+    else if (evalDiff < 250) { badgeClass = 'badge-mistake'; category = 'Mistake'; }
+    else { badgeClass = 'badge-blunder'; category = 'Blunder'; }
+
+    stats[category]++;
+
+    const moveAcc = Math.max(0, 100 - (evalDiff / 3));
+    totalAcc += moveAcc;
+
+    const rowHtml = `
+      <div class="analysis-row" data-index="${i + 1}">
+        <div><strong>${i + 1}. ${move.san}</strong> (${move.color === 'w' ? 'White' : 'Black'})</div>
+        <span class="badge ${badgeClass}">${category}</span>
+      </div>
+    `;
+    $('#analysis-list').append(rowHtml);
+  }
+
+  const overallAccuracy = Math.round(totalAcc / history.length);
+  $('#accuracy-score').text(`${overallAccuracy}%`);
+  $('#summary-stats').html(`
+    <span class="badge badge-best">Best: ${stats.Best}</span>
+    <span class="badge badge-good">Good: ${stats.Good}</span>
+    <span class="badge badge-inaccuracy">Inacc: ${stats.Inaccuracy}</span>
+    <span class="badge badge-mistake">Mistakes: ${stats.Mistake}</span>
+    <span class="badge badge-blunder">Blunders: ${stats.Blunder}</span>
+  `);
+
+  isAnalyzing = false;
+  $('#analyze-btn').prop('disabled', false).text("Analyze Game");
+  updateStatus();
+}
+
+function waitForReady() {
+  return new Promise((resolve) => {
+    function onReadyMessage(e) {
+      const line = typeof e.data === 'string' ? e.data : '';
+      if (line === 'readyok') {
+        engineWorker.removeEventListener('message', onReadyMessage);
+        resolve();
       }
-
-      isAnalyzing = true;
-      $('#analyze-btn').prop('disabled', true).text("Analyzing...");
-      $('#status').text("Analyzing game moves...");
-      $('#analysis-panel').show();
-      $('#analysis-list').empty();
-
-      const tempGame = new Chess();
-      moveHistoryFens = [tempGame.fen()];
-      const evaluations = [];
-
-      // Initial board position eval
-      evaluations.push(await evaluateFen(tempGame.fen()));
-
-      for (let i = 0; i < history.length; i++) {
-        tempGame.move(history[i]);
-        moveHistoryFens.push(tempGame.fen());
-        const evalScore = await evaluateFen(tempGame.fen());
-        evaluations.push(evalScore);
-        $('#status').text(`Analyzing move ${i + 1} of ${history.length}...`);
-      }
-
-      // Calculate accuracy & move classifications
-      let totalAcc = 0;
-      let stats = { Best: 0, Good: 0, Inaccuracy: 0, Mistake: 0, Blunder: 0 };
-
-      for (let i = 0; i < history.length; i++) {
-        const prevEval = evaluations[i];
-        const currEval = evaluations[i + 1];
-        const move = history[i];
-
-        // Evaluate loss from the mover's perspective
-        let evalDiff = (move.color === 'w') ? (prevEval - currEval) : (currEval - prevEval);
-        evalDiff = Math.max(0, evalDiff); // Only positive losses
-
-        let badgeClass = 'badge-good';
-        let category = 'Good';
-
-        if (evalDiff < 15) { badgeClass = 'badge-best'; category = 'Best'; }
-        else if (evalDiff < 50) { badgeClass = 'badge-good'; category = 'Good'; }
-        else if (evalDiff < 120) { badgeClass = 'badge-inaccuracy'; category = 'Inaccuracy'; }
-        else if (evalDiff < 250) { badgeClass = 'badge-mistake'; category = 'Mistake'; }
-        else { badgeClass = 'badge-blunder'; category = 'Blunder'; }
-
-        stats[category]++;
-
-        const moveAcc = Math.max(0, 100 - (evalDiff / 3));
-        totalAcc += moveAcc;
-
-        const rowHtml = `
-          <div class="analysis-row" data-index="${i + 1}">
-            <div><strong>${i + 1}. ${move.san}</strong> (${move.color === 'w' ? 'White' : 'Black'})</div>
-            <span class="badge ${badgeClass}">${category}</span>
-          </div>
-        `;
-        $('#analysis-list').append(rowHtml);
-      }
-
-      const overallAccuracy = Math.round(totalAcc / history.length);
-      $('#accuracy-score').text(`${overallAccuracy}%`);
-      $('#summary-stats').html(`
-        <span class="badge badge-best">Best: ${stats.Best}</span>
-        <span class="badge badge-good">Good: ${stats.Good}</span>
-        <span class="badge badge-inaccuracy">Inacc: ${stats.Inaccuracy}</span>
-        <span class="badge badge-mistake">Mistakes: ${stats.Mistake}</span>
-        <span class="badge badge-blunder">Blunders: ${stats.Blunder}</span>
-      `);
-
-      isAnalyzing = false;
-      $('#analyze-btn').prop('disabled', false).text("Analyze Game");
-      updateStatus();
     }
+    engineWorker.addEventListener('message', onReadyMessage);
+    engineWorker.postMessage('isready');
+  });
+}
 
-    function evaluateFen(fen) {
-      return new Promise((resolve) => {
-        let lastScore = 0;
-        
-        function onEvalMessage(e) {
-          const line = typeof e.data === 'string' ? e.data : '';
+function evaluateFen(fen) {
+  return new Promise(async (resolve) => {
+    await waitForReady();
 
-          if (line.includes('score cp')) {
-            const tokens = line.split(' ');
-            const cpIndex = tokens.indexOf('cp');
-            if (cpIndex !== -1) {
-              lastScore = parseInt(tokens[cpIndex + 1], 10);
-            }
-          } else if (line.includes('score mate')) {
-            const tokens = line.split(' ');
-            const mateIndex = tokens.indexOf('mate');
-            if (mateIndex !== -1) {
-              const mateIn = parseInt(tokens[mateIndex + 1], 10);
-              lastScore = mateIn > 0 ? 10000 : -10000;
-            }
-          }
+    let lastScore = 0;
+    function onEvalMessage(e) {
+      const line = typeof e.data === 'string' ? e.data : '';
 
-          if (line.startsWith('bestmove')) {
-            engineWorker.removeEventListener('message', onEvalMessage);
-            resolve(lastScore);
-          }
+      if (line.includes('score cp')) {
+        const tokens = line.split(' ');
+        const cpIndex = tokens.indexOf('cp');
+        if (cpIndex !== -1) {
+          lastScore = parseInt(tokens[cpIndex + 1], 10);
         }
+      } else if (line.includes('score mate')) {
+        const tokens = line.split(' ');
+        const mateIndex = tokens.indexOf('mate');
+        if (mateIndex !== -1) {
+          const mateIn = parseInt(tokens[mateIndex + 1], 10);
+          lastScore = mateIn > 0 ? 10000 : -10000;
+        }
+      }
 
-        engineWorker.addEventListener('message', onEvalMessage);
-        engineWorker.postMessage(`position fen ${fen}`);
-        engineWorker.postMessage('go depth 10');
-      });
+      if (line.startsWith('bestmove')) {
+        engineWorker.removeEventListener('message', onEvalMessage);
+        resolve(lastScore);
+      }
     }
+
+    engineWorker.addEventListener('message', onEvalMessage);
+    engineWorker.postMessage(`position fen ${fen}`);
+    engineWorker.postMessage('go depth 8');
+  });
+}
 
     // --- Event Listeners ---
     $('#analyze-btn').on('click', analyzeGame);
