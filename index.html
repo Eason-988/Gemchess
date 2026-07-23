@@ -398,6 +398,18 @@ function initEngine() {
       }
     };
 
+function triggerEngineMove() {
+  if (!engineWorker || !engineReady || isThinking) return;
+  
+  isThinking = true;
+  updateStatus();
+
+  // Send current board position to Stockfish
+  engineWorker.postMessage('position fen ' + game.fen());
+  
+  // Tell Stockfish to calculate a move (1-second search depth)
+  engineWorker.postMessage('go movetime 1000');
+}
     // Initialize UCI protocol
     engineWorker.postMessage('uci');
     engineWorker.postMessage('isready');
